@@ -2,9 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List
-from openai import OpenAI
 import numpy as np
-import os
 
 app = FastAPI()
 
@@ -17,34 +15,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+# Request Model
 class SimilarityRequest(BaseModel):
     docs: List[str]
     query: str
 
+# Fake Embedding Generator (Quota-Free)
+def fake_embedding(text: str):
+    np.random.seed(len(text))  # deterministic
+    return np.random.rand(256)
+
+# Cosine Similarity
 def cosine_similarity(a, b):
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 @app.post("/similarity")
 def compute_similarity(request: SimilarityRequest):
 
-    # Generate document embeddings
-    doc_response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=request.docs
-    )
+    # Generate embeddings for docs
+    doc_embeddings = [fake_embedding(doc) for doc in request.docs]
 
-    doc_embeddings = [item.embedding for item in doc_response.data]
-
-    # Generate query embedding
-    query_response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=request.query
-    )
-
-    query_embedding = query_response.data[0].embedding
+    # Generate embedding for query
+    query_embedding = fake_embedding(request.query)
 
     scores = []
 
@@ -52,12 +44,12 @@ def compute_similarity(request: SimilarityRequest):
         similarity = cosine_similarity(query_embedding, doc_embedding)
         scores.append((i, similarity))
 
-    # Sort by similarity descending
+    # Sort descending
     scores.sort(key=lambda x: x[1], reverse=True)
 
-    # Top 3 matches
-    top_matches = [request.docs[i] for i, _ in scores[:3]]
+    # Get top 3 docs
+    top_docs = [request.docs[i] for i, _ in scores[:3]]
 
     return {
-        "matches": top_matches
+        "matches": top_docs
     }

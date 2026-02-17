@@ -15,39 +15,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Request Model
 class SimilarityRequest(BaseModel):
     docs: List[str]
     query: str
 
-# Fake Embedding Generator (Quota-Free)
-def fake_embedding(text: str):
-    np.random.seed(len(text))  # deterministic
-    return np.random.rand(256)
+# Simple Bag-of-Words Embedding
+def embed(text, vocabulary):
+    words = text.lower().split()
+    vector = np.zeros(len(vocabulary))
+    for word in words:
+        if word in vocabulary:
+            vector[vocabulary.index(word)] += 1
+    return vector
 
-# Cosine Similarity
 def cosine_similarity(a, b):
+    if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
+        return 0
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 @app.post("/similarity")
 def compute_similarity(request: SimilarityRequest):
 
-    # Generate embeddings for docs
-    doc_embeddings = [fake_embedding(doc) for doc in request.docs]
+    # Build vocabulary from docs + query
+    all_text = " ".join(request.docs + [request.query])
+    vocabulary = list(set(all_text.lower().split()))
 
-    # Generate embedding for query
-    query_embedding = fake_embedding(request.query)
+    # Embed query
+    query_vector = embed(request.query, vocabulary)
 
     scores = []
 
-    for i, doc_embedding in enumerate(doc_embeddings):
-        similarity = cosine_similarity(query_embedding, doc_embedding)
+    for i, doc in enumerate(request.docs):
+        doc_vector = embed(doc, vocabulary)
+        similarity = cosine_similarity(query_vector, doc_vector)
         scores.append((i, similarity))
 
-    # Sort descending
+    # Sort by similarity descending
     scores.sort(key=lambda x: x[1], reverse=True)
 
-    # Get top 3 docs
     top_docs = [request.docs[i] for i, _ in scores[:3]]
 
     return {

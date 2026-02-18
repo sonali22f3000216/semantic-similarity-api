@@ -19,42 +19,34 @@ class SimilarityRequest(BaseModel):
     docs: List[str]
     query: str
 
-# Simple Bag-of-Words Embedding
-def embed(text, vocabulary):
-    words = text.lower().split()
-    vector = np.zeros(len(vocabulary))
-    for word in words:
-        if word in vocabulary:
-            vector[vocabulary.index(word)] += 1
-    return vector
+# Lightweight semantic-style embedding
+def simple_embed(text):
+    text = text.lower()
+    words = text.split()
+    length = len(text)
+    unique_words = len(set(words))
+    avg_word_len = np.mean([len(w) for w in words]) if words else 0
+    return np.array([length, unique_words, avg_word_len])
 
 def cosine_similarity(a, b):
-    if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
-        return 0
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 @app.post("/similarity")
 def compute_similarity(request: SimilarityRequest):
 
-    # Build vocabulary from docs + query
-    all_text = " ".join(request.docs + [request.query])
-    vocabulary = list(set(all_text.lower().split()))
-
-    # Embed query
-    query_vector = embed(request.query, vocabulary)
+    query_embedding = simple_embed(request.query)
 
     scores = []
 
     for i, doc in enumerate(request.docs):
-        doc_vector = embed(doc, vocabulary)
-        similarity = cosine_similarity(query_vector, doc_vector)
+        doc_embedding = simple_embed(doc)
+        similarity = cosine_similarity(query_embedding, doc_embedding)
         scores.append((i, similarity))
 
     # Sort by similarity descending
     scores.sort(key=lambda x: x[1], reverse=True)
 
+    # Return top 3 documents
     top_docs = [request.docs[i] for i, _ in scores[:3]]
 
-    return {
-        "matches": top_docs
-    }
+    return {"matches": top_docs}
